@@ -36,7 +36,7 @@ export function getDB(): Promise<ScannerDB> {
 export async function putStudents(profiles: StudentProfile[]): Promise<void> {
   const database = await getDB();
   const tx = database.transaction(STORE_STUDENTS, 'readwrite');
-  const store = tx.objectStore(STORE_STUDENTS);
+  const store = tx.store;
   await store.clear();
   for (const p of profiles) {
     if (p.rfid_tag) await store.put(p);
