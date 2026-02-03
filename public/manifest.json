@@ -1,0 +1,17 @@
+{
+  "name": "ID Attendance Scanner",
+  "short_name": "Scanner",
+  "description": "RFID attendance scanner – works offline",
+  "theme_color": "#6366F1",
+  "background_color": "#F9FAFB",
+  "display": "standalone",
+  "start_url": "/",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

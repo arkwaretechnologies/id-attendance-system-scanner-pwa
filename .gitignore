@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Env files (secrets, local overrides)
+.env
+.env.*
+!.env.example
+
+# Next.js
+.next/
+out/
+
+# Build / cache
+dist/
+*.tsbuildinfo
+
+# Debug / IDE
+npm-debug.log*
+.DS_Store
+*.pem
+
+# Vercel
+.vercel
+
+# TypeScript
+next-env.d.ts
