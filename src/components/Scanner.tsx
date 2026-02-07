@@ -71,22 +71,38 @@ export default function Scanner() {
     setIsOnline(navigator.onLine);
     setSchoolId(getSchoolId());
     const unsubscribe = onSchoolIdChanged((sid) => setSchoolId(sid));
-    const handleOnline = () => {
-      setIsOnline(true);
-      onOnline(schoolId).then(() => {
+    const runSync = () => {
+      const sid = getSchoolId();
+      if (!sid.trim()) return;
+      onOnline(sid).then(() => {
         loadQueueCount();
         loadRecentScans();
       });
     };
+    const handleOnline = () => {
+      setIsOnline(true);
+      runSync();
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState !== 'visible' || !navigator.onLine) return;
+      runSync();
+    };
     const handleOffline = () => setIsOnline(false);
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+    document.addEventListener('visibilitychange', handleVisibility);
+    const flushInterval = window.setInterval(() => {
+      if (!navigator.onLine) return;
+      runSync();
+    }, 45000);
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      clearInterval(flushInterval);
       unsubscribe();
     };
-  }, [loadQueueCount, loadRecentScans, schoolId]);
+  }, [loadQueueCount, loadRecentScans]);
 
   const handleScan = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
