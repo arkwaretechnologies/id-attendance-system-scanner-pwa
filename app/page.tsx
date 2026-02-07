@@ -1,6 +1,8 @@
 'use client';
 
-import Scanner from '@/components/Scanner';
+import dynamic from 'next/dynamic';
+
+const Scanner = dynamic(() => import('@/components/Scanner'), { ssr: false });
 
 export default function Home() {
   return <Scanner />;

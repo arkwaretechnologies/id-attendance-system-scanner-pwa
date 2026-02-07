@@ -44,6 +44,20 @@ export async function putStudents(profiles: StudentProfile[]): Promise<void> {
   await tx.done;
 }
 
+export async function clearStudents(): Promise<void> {
+  const database = await getDB();
+  const tx = database.transaction(STORE_STUDENTS, 'readwrite');
+  await tx.store.clear();
+  await tx.done;
+}
+
+export async function clearQueue(): Promise<void> {
+  const database = await getDB();
+  const tx = database.transaction(STORE_QUEUE, 'readwrite');
+  await tx.store.clear();
+  await tx.done;
+}
+
 export async function getStudentByRfId(rfid: string): Promise<StudentProfile | undefined> {
   const database = await getDB();
   const value = await database.get(STORE_STUDENTS, rfid.trim());

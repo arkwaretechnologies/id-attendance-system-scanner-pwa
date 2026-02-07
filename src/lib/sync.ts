@@ -5,11 +5,13 @@ import { sendAttendanceSms } from './sms';
 const REFRESH_RETRIES = 3;
 const REFRESH_RETRY_DELAY_MS = 1500;
 
-export async function refreshStudentCache(): Promise<void> {
+export async function refreshStudentCache(schoolId: string): Promise<void> {
+  const sid = schoolId.trim();
+  if (!sid) return;
   let lastError: unknown;
   for (let attempt = 1; attempt <= REFRESH_RETRIES; attempt++) {
     try {
-      const profiles = await supabase.fetchAllStudentsWithRfid();
+      const profiles = await supabase.fetchAllStudentsWithRfid(sid);
       await db.putStudents(profiles);
       return;
     } catch (e) {
@@ -33,17 +35,20 @@ export async function flushQueue(): Promise<{ processed: number; failed: number 
       continue;
     }
     try {
+      const scanTime = item.timestamp_iso;
       if (item.action === 'time_in') {
         const { error } = await supabase.recordTimeIn({
           learner_ref_number: profile.learner_reference_number ?? null,
           rfid_tag: profile.rfid_tag ?? null,
           grade_level: profile.grade_level ?? null,
           school_year: profile.school_year ?? '2024-2025',
+          timestamp: scanTime,
         });
         if (error) throw error;
       } else {
         const { error } = await supabase.recordTimeOut({
           learner_ref_number: profile.learner_reference_number ?? null,
+          timestamp: scanTime,
         });
         if (error) throw error;
       }
@@ -54,7 +59,7 @@ export async function flushQueue(): Promise<{ processed: number; failed: number 
           guardian_contact_number: profile.guardian_contact_number ?? null,
         },
         action: item.action,
-        timestamp: item.timestamp_iso,
+        timestamp: scanTime,
       });
       await db.deleteQueueItem(item.id);
       processed += 1;
@@ -65,9 +70,9 @@ export async function flushQueue(): Promise<{ processed: number; failed: number 
   return { processed, failed };
 }
 
-export async function onOnline(): Promise<void> {
+export async function onOnline(schoolId: string): Promise<void> {
   try {
-    await refreshStudentCache();
+    await refreshStudentCache(schoolId);
   } catch (e) {
     console.error('Sync on online (cache refresh failed):', e);
   }

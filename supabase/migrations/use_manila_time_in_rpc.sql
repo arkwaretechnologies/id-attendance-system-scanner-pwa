@@ -1,0 +1,19 @@
+-- ============================================================
+-- Store time_in and time_out in Manila (Philippines) time
+-- ============================================================
+-- In Supabase: Database → Functions → record_time_in and record_time_out.
+-- Edit each function and use the expression below when setting time_in / time_out.
+--
+-- Use this expression for the time_in column (in record_time_in):
+--   (now() AT TIME ZONE 'Asia/Manila')
+--
+-- Use this expression for the time_out column (in record_time_out):
+--   (now() AT TIME ZONE 'Asia/Manila')
+--
+-- If your column type is TIMESTAMP WITH TIME ZONE (timestamptz), use:
+--   ((now() AT TIME ZONE 'Asia/Manila') AT TIME ZONE 'Asia/Manila')::timestamptz
+-- so the correct instant is stored and the app can show it in Manila.
+--
+-- If your column type is TIMESTAMP WITHOUT TIME ZONE, use:
+--   (now() AT TIME ZONE 'Asia/Manila')
+-- so the stored value is the clock time in Manila (e.g. 10:30:00).

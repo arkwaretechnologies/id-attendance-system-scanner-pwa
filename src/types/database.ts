@@ -1,5 +1,6 @@
 export interface StudentProfile {
   id: string;
+  school_id?: string | null;
   learner_reference_number?: string | null;
   last_name?: string | null;
   first_name?: string | null;

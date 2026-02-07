@@ -1,9 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import Link from 'next/link';
 import { Scan, CheckCircle, AlertTriangle, UserCheck } from 'lucide-react';
 import * as db from '../lib/db';
 import * as supabase from '../lib/supabase';
 import { sendAttendanceSms } from '../lib/sms';
 import { onOnline, refreshStudentCache } from '../lib/sync';
+import { getSchoolId, onSchoolIdChanged } from '../lib/settings';
+import { formatTimeManila, getNowManilaClock, nowISO } from '../lib/manilaTime';
 import type { StudentProfile } from '../types/database';
 import type { QueuedScan } from '../types/database';
 import type { TodayAttendanceRow } from '../lib/supabase';
@@ -13,6 +16,7 @@ type ScanModeType = 'time_in' | 'time_out';
 export default function Scanner() {
   // Always start true so server and client first paint match (avoids hydration error)
   const [isOnline, setIsOnline] = useState(true);
+  const [schoolId, setSchoolId] = useState('');
   const [queueCount, setQueueCount] = useState(0);
   const [rfId, setRfId] = useState('');
   const [scanning, setScanning] = useState(false);
@@ -22,7 +26,15 @@ export default function Scanner() {
   const [showSuccessOverlay, setShowSuccessOverlay] = useState(false);
   const [scanMode, setScanMode] = useState<ScanModeType>('time_in');
   const [recentScans, setRecentScans] = useState<(TodayAttendanceRow | QueuedScan)[]>([]);
+  const [manilaClock, setManilaClock] = useState<{ time: string; date: string }>({ time: '', date: '' });
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const tick = () => setManilaClock(getNowManilaClock());
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   const loadQueueCount = useCallback(async () => {
     const n = await db.getQueueCount();
@@ -32,7 +44,11 @@ export default function Scanner() {
   const loadRecentScans = useCallback(async () => {
     if (isOnline) {
       try {
-        const rows = await supabase.getTodayAttendance();
+        if (!schoolId.trim()) {
+          setRecentScans([]);
+          return;
+        }
+        const rows = await supabase.getTodayAttendance(schoolId);
         setRecentScans(rows);
       } catch {
         setRecentScans([]);
@@ -41,21 +57,23 @@ export default function Scanner() {
       const queueItems = await db.getRecentQueueItems(20);
       setRecentScans(queueItems);
     }
-  }, [isOnline]);
+  }, [isOnline, schoolId]);
 
   useEffect(() => {
     loadQueueCount();
     loadRecentScans();
-    if (isOnline) {
-      refreshStudentCache().catch(console.error);
+    if (isOnline && schoolId.trim()) {
+      refreshStudentCache(schoolId).catch(console.error);
     }
-  }, [loadQueueCount, loadRecentScans, isOnline]);
+  }, [loadQueueCount, loadRecentScans, isOnline, schoolId]);
 
   useEffect(() => {
     setIsOnline(navigator.onLine);
+    setSchoolId(getSchoolId());
+    const unsubscribe = onSchoolIdChanged((sid) => setSchoolId(sid));
     const handleOnline = () => {
       setIsOnline(true);
-      onOnline().then(() => {
+      onOnline(schoolId).then(() => {
         loadQueueCount();
         loadRecentScans();
       });
@@ -66,12 +84,18 @@ export default function Scanner() {
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      unsubscribe();
     };
-  }, [loadQueueCount, loadRecentScans]);
+  }, [loadQueueCount, loadRecentScans, schoolId]);
 
   const handleScan = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!rfId.trim()) return;
+    if (!schoolId.trim()) {
+      setMessage('Please set School ID first in Settings.');
+      setMessageType('error');
+      return;
+    }
     setScanning(true);
     setMessage('');
     setMessageType('');
@@ -79,7 +103,7 @@ export default function Scanner() {
     try {
       let profile: StudentProfile | null = null;
       if (isOnline) {
-        const { data, error } = await supabase.getStudentByRfId(rfId.trim());
+        const { data, error } = await supabase.getStudentByRfId(rfId.trim(), schoolId);
         if (error) throw error;
         profile = data ?? null;
       } else {
@@ -96,6 +120,7 @@ export default function Scanner() {
         return;
       }
 
+      const scanTime = nowISO();
       if (isOnline) {
         if (scanMode === 'time_in') {
           const { error } = await supabase.recordTimeIn({
@@ -103,11 +128,13 @@ export default function Scanner() {
             rfid_tag: profile.rfid_tag ?? null,
             grade_level: profile.grade_level ?? null,
             school_year: profile.school_year ?? '2024-2025',
+            timestamp: scanTime,
           });
           if (error) throw error;
         } else {
           const { error } = await supabase.recordTimeOut({
             learner_ref_number: profile.learner_reference_number ?? null,
+            timestamp: scanTime,
           });
           if (error) throw error;
         }
@@ -118,14 +145,14 @@ export default function Scanner() {
             guardian_contact_number: profile.guardian_contact_number ?? null,
           },
           action: scanMode,
-          timestamp: new Date().toISOString(),
+          timestamp: scanTime,
         });
         await loadRecentScans();
       } else {
         await db.addToQueue({
           rfid_tag: rfId.trim(),
           action: scanMode,
-          timestamp_iso: new Date().toISOString(),
+          timestamp_iso: nowISO(),
         });
         await loadQueueCount();
         await loadRecentScans();
@@ -161,13 +188,22 @@ export default function Scanner() {
   };
 
   const displayTime = (item: TodayAttendanceRow | QueuedScan) => {
-    if ('time_in' in item && item.time_in) return new Date(item.time_in).toLocaleTimeString();
-    if ('timestamp_iso' in item) return new Date(item.timestamp_iso).toLocaleTimeString();
+    if ('time_in' in item && item.time_in) return formatTimeManila(item.time_in);
+    if ('timestamp_iso' in item) return formatTimeManila(item.timestamp_iso);
     return '—';
   };
 
   return (
     <div className="min-h-screen p-4 max-w-2xl mx-auto">
+      {!schoolId.trim() && (
+        <div className="mb-4 p-4 rounded-lg bg-blue-50 text-blue-900 border border-blue-200 flex items-center justify-between gap-3">
+          <span className="font-medium">School ID is not set — scanning is disabled</span>
+          <Link href="/settings" className="px-3 py-1 rounded bg-blue-600 text-white font-semibold">
+            Open Settings
+          </Link>
+        </div>
+      )}
+
       {!isOnline && (
         <div className="mb-4 p-4 rounded-lg bg-amber-100 text-amber-900 border border-amber-300 flex items-center justify-between">
           <span className="font-medium">Offline – scans will sync when online</span>
@@ -191,8 +227,25 @@ export default function Scanner() {
       )}
 
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">RF ID Scanner</h1>
-        <p className="text-gray-600">Scan student RF IDs to mark attendance</p>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">RF ID Scanner</h1>
+            <p className="text-gray-600">Scan student RF IDs to mark attendance</p>
+            {schoolId.trim() && <p className="text-sm text-gray-500 mt-1">School ID: {schoolId}</p>}
+          </div>
+          <Link href="/settings" className="px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 font-semibold">
+            Settings
+          </Link>
+        </div>
+      </div>
+
+      <div className="mb-6 py-4 px-5 rounded-xl bg-slate-800 text-white text-center shadow-lg">
+        <p className="text-slate-300 text-sm font-medium uppercase tracking-wider mb-1">Manila time (Philippines)</p>
+        <p className="text-4xl font-mono font-bold tabular-nums tracking-tight">
+          {manilaClock.time || '--:--:--'}
+        </p>
+        <p className="text-slate-400 text-sm mt-2">{manilaClock.date || '—'}</p>
+        <p className="text-slate-500 text-xs mt-1">Time In / Time Out are recorded using this time</p>
       </div>
 
       <div className="bg-white rounded-xl shadow p-6 mb-6">
@@ -235,7 +288,7 @@ export default function Scanner() {
             value={rfId}
             onChange={(e) => setRfId(e.target.value)}
             placeholder="Enter RF ID"
-            disabled={scanning}
+            disabled={scanning || !schoolId.trim()}
             autoFocus
           />
           <button
@@ -243,7 +296,7 @@ export default function Scanner() {
             className={`w-full p-4 text-lg font-semibold rounded-lg ${
               scanMode === 'time_in' ? 'bg-green-500 hover:bg-green-600' : 'bg-red-500 hover:bg-red-600'
             } text-white disabled:opacity-50`}
-            disabled={scanning || !rfId.trim()}
+            disabled={scanning || !rfId.trim() || !schoolId.trim()}
           >
             {scanning ? 'Processing...' : scanMode === 'time_in' ? 'Record Time In' : 'Record Time Out'}
           </button>
