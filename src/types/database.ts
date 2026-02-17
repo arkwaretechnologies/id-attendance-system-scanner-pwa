@@ -8,6 +8,8 @@ export interface StudentProfile {
   grade_level?: string | null;
   school_year?: string | null;
   guardian_contact_number?: string | null;
+  /** URL or storage path for image in bucket `student_image` */
+  student_image_url?: string | null;
   [key: string]: unknown;
 }
 

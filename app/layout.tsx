@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import './global.css';
+import { Providers } from './Providers';
 
 export const metadata: Metadata = {
   title: 'ID Attendance Scanner',
@@ -23,7 +24,9 @@ export default function RootLayout({
       <head>
         <link rel="icon" type="image/png" href="/favicon.png" />
       </head>
-      <body>{children}</body>
+      <body>
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }

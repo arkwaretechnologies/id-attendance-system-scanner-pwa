@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import Link from 'next/link';
-import { Scan, CheckCircle, AlertTriangle, UserCheck } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Scan, CheckCircle, AlertTriangle, UserCheck, LogOut } from 'lucide-react';
 import * as db from '../lib/db';
 import * as supabase from '../lib/supabase';
 import { sendAttendanceSms } from '../lib/sms';
 import { onOnline, refreshStudentCache } from '../lib/sync';
-import { getSchoolId, onSchoolIdChanged } from '../lib/settings';
+import { useAuth } from '../contexts/AuthContext';
 import { formatTimeManila, getNowManilaClock, nowISO } from '../lib/manilaTime';
 import type { StudentProfile } from '../types/database';
 import type { QueuedScan } from '../types/database';
@@ -14,9 +14,9 @@ import type { TodayAttendanceRow } from '../lib/supabase';
 type ScanModeType = 'time_in' | 'time_out';
 
 export default function Scanner() {
-  // Always start true so server and client first paint match (avoids hydration error)
+  const router = useRouter();
+  const { schoolId, schoolName, signOut } = useAuth();
   const [isOnline, setIsOnline] = useState(true);
-  const [schoolId, setSchoolId] = useState('');
   const [queueCount, setQueueCount] = useState(0);
   const [rfId, setRfId] = useState('');
   const [scanning, setScanning] = useState(false);
@@ -69,12 +69,9 @@ export default function Scanner() {
 
   useEffect(() => {
     setIsOnline(navigator.onLine);
-    setSchoolId(getSchoolId());
-    const unsubscribe = onSchoolIdChanged((sid) => setSchoolId(sid));
     const runSync = () => {
-      const sid = getSchoolId();
-      if (!sid.trim()) return;
-      onOnline(sid).then(() => {
+      if (!schoolId.trim()) return;
+      onOnline(schoolId).then(() => {
         loadQueueCount();
         loadRecentScans();
       });
@@ -100,15 +97,14 @@ export default function Scanner() {
       window.removeEventListener('offline', handleOffline);
       document.removeEventListener('visibilitychange', handleVisibility);
       clearInterval(flushInterval);
-      unsubscribe();
     };
-  }, [loadQueueCount, loadRecentScans]);
+  }, [loadQueueCount, loadRecentScans, schoolId]);
 
   const handleScan = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!rfId.trim()) return;
     if (!schoolId.trim()) {
-      setMessage('Please set School ID first in Settings.');
+      setMessage('Session invalid. Please log in again.');
       setMessageType('error');
       return;
     }
@@ -211,15 +207,6 @@ export default function Scanner() {
 
   return (
     <div className="min-h-screen p-4 max-w-2xl mx-auto">
-      {!schoolId.trim() && (
-        <div className="mb-4 p-4 rounded-lg bg-blue-50 text-blue-900 border border-blue-200 flex items-center justify-between gap-3">
-          <span className="font-medium">School ID is not set — scanning is disabled</span>
-          <Link href="/settings" className="px-3 py-1 rounded bg-blue-600 text-white font-semibold">
-            Open Settings
-          </Link>
-        </div>
-      )}
-
       {!isOnline && (
         <div className="mb-4 p-4 rounded-lg bg-amber-100 text-amber-900 border border-amber-300 flex items-center justify-between">
           <span className="font-medium">Offline – scans will sync when online</span>
@@ -232,7 +219,18 @@ export default function Scanner() {
       {showSuccessOverlay && lastScannedStudent && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
           <div className="bg-white p-8 rounded-2xl text-center max-w-sm w-11/12 shadow-2xl">
-            <CheckCircle size={64} className="text-green-500 mx-auto mb-4" />
+            {supabase.getStudentImageUrl(lastScannedStudent) ? (
+              <img
+                src={supabase.getStudentImageUrl(lastScannedStudent)!}
+                alt={`${lastScannedStudent.first_name} ${lastScannedStudent.last_name}`}
+                className="w-96 h-96 rounded-full object-cover mx-auto mb-4 border-2 border-green-500"
+              />
+            ) : (
+              <div className="w-96 h-96 rounded-full bg-gray-200 flex items-center justify-center mx-auto mb-4">
+                <UserCheck size={120} className="text-gray-400" />
+              </div>
+            )}
+            <CheckCircle size={48} className="text-green-500 mx-auto mb-2" />
             <h2 className="text-2xl font-bold mb-2 text-gray-900">Attendance Recorded!</h2>
             <p className="text-lg text-gray-700">
               {lastScannedStudent.first_name} {lastScannedStudent.last_name}
@@ -247,11 +245,22 @@ export default function Scanner() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">RF ID Scanner</h1>
             <p className="text-gray-600">Scan student RF IDs to mark attendance</p>
-            {schoolId.trim() && <p className="text-sm text-gray-500 mt-1">School ID: {schoolId}</p>}
+            {schoolName && <p className="text-sm text-gray-500 mt-1">{schoolName}</p>}
+            {schoolId.trim() && !schoolName && <p className="text-sm text-gray-500 mt-1">School ID: {schoolId}</p>}
           </div>
-          <Link href="/settings" className="px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 font-semibold">
-            Settings
-          </Link>
+          <button
+            type="button"
+            onClick={async () => {
+              await db.clearStudents();
+              await db.clearQueue();
+              await signOut();
+              router.push('/login');
+            }}
+            className="px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 font-semibold flex items-center gap-2 hover:bg-gray-50"
+          >
+            <LogOut size={18} />
+            Log out
+          </button>
         </div>
       </div>
 
@@ -341,17 +350,34 @@ export default function Scanner() {
           </p>
         ) : (
           <ul className="space-y-3">
-            {recentScans.slice(0, 10).map((item, i) => (
-              <li
-                key={'id' in item ? item.id : i}
-                className="flex justify-between items-center p-3 rounded-lg border border-gray-200"
-              >
-                <span className="font-medium text-gray-900">{displayName(item)}</span>
-                <span className="text-sm text-gray-500">
-                  {'action' in item ? item.action : ''} {displayTime(item)}
-                </span>
-              </li>
-            ))}
+            {recentScans.slice(0, 10).map((item, i) => {
+              const imageUrl =
+                'student_profile' in item && item.student_profile
+                  ? supabase.getStudentImageUrl(item.student_profile as StudentProfile)
+                  : null;
+              return (
+                <li
+                  key={'id' in item ? item.id : i}
+                  className="flex items-center gap-3 p-3 rounded-lg border border-gray-200"
+                >
+                  {imageUrl ? (
+                    <img
+                      src={imageUrl}
+                      alt=""
+                      className="w-32 h-32 rounded-full object-cover flex-shrink-0 bg-gray-100"
+                    />
+                  ) : (
+                    <div className="w-32 h-32 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0">
+                      <UserCheck size={48} className="text-gray-400" />
+                    </div>
+                  )}
+                  <span className="font-medium text-gray-900 flex-1 min-w-0">{displayName(item)}</span>
+                  <span className="text-sm text-gray-500 flex-shrink-0">
+                    {'action' in item ? item.action : ''} {displayTime(item)}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>

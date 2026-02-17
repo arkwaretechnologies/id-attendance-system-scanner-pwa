@@ -21,7 +21,7 @@ export async function getStudentByRfId(
   if (!sid) return { data: null, error: new Error('schoolId is required') };
   const { data, error } = await getSupabase()
     .from('student_profile')
-    .select('id, school_id, rfid_tag, learner_reference_number, first_name, last_name, grade_level, school_year, guardian_contact_number')
+    .select('id, school_id, rfid_tag, learner_reference_number, first_name, last_name, grade_level, school_year, guardian_contact_number, student_image_url')
     .eq('rfid_tag', rfId.trim())
     .eq('school_id', sid)
     .single();
@@ -75,7 +75,7 @@ export async function fetchAllStudentsWithRfid(schoolId: string): Promise<Studen
   if (!sid) return [];
   const { data, error } = await getSupabase()
     .from('student_profile')
-    .select('id, school_id, rfid_tag, learner_reference_number, first_name, last_name, grade_level, school_year, guardian_contact_number')
+    .select('id, school_id, rfid_tag, learner_reference_number, first_name, last_name, grade_level, school_year, guardian_contact_number, student_image_url')
     .eq('school_id', sid)
     .not('rfid_tag', 'is', null);
   if (error) throw error;
@@ -93,6 +93,20 @@ export interface TodayAttendanceRow {
   student_profile?: StudentProfile | null;
 }
 
+const STUDENT_IMAGE_BUCKET = 'student_image';
+
+/**
+ * Resolve student image URL from student_profile.student_image_url.
+ * If it's already a full URL, return as-is; otherwise treat as path in bucket student_image.
+ */
+export function getStudentImageUrl(profile: { student_image_url?: string | null } | null): string | null {
+  const raw = profile?.student_image_url?.trim();
+  if (!raw) return null;
+  if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+  const { data } = getSupabase().storage.from(STUDENT_IMAGE_BUCKET).getPublicUrl(raw);
+  return data?.publicUrl ?? null;
+}
+
 export async function getTodayAttendance(schoolId: string): Promise<TodayAttendanceRow[]> {
   const { start, end } = getTodayManilaRange();
   const sid = schoolId.trim();
@@ -100,7 +114,7 @@ export async function getTodayAttendance(schoolId: string): Promise<TodayAttenda
   const { data, error } = await getSupabase()
     .from('attendance')
     .select(
-      'id, learner_reference_number, time_in, time_out, session_number, grade_level, rfid_tag, student_profile!inner (first_name, last_name, rfid_tag, grade_level, school_id)'
+      'id, learner_reference_number, time_in, time_out, session_number, grade_level, rfid_tag, student_profile!inner (first_name, last_name, rfid_tag, grade_level, school_id, student_image_url)'
     )
     .gte('created_at', start)
     .lt('created_at', end)
