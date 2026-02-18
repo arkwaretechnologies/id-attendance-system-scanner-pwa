@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Scan, CheckCircle, AlertTriangle, UserCheck, LogOut } from 'lucide-react';
+import { Scan, CheckCircle, AlertTriangle, UserCheck, LogOut, Lock } from 'lucide-react';
 import * as db from '../lib/db';
 import * as supabase from '../lib/supabase';
 import { sendAttendanceSms } from '../lib/sms';
@@ -32,6 +32,11 @@ export default function Scanner() {
   const [recentScans, setRecentScans] = useState<(TodayAttendanceRow | QueuedScan)[]>([]);
   const [manilaClock, setManilaClock] = useState<{ time: string; date: string }>({ time: '', date: '' });
   const [currentSessionName, setCurrentSessionName] = useState<string | null>(null);
+  const [isAutomaticMode, setIsAutomaticMode] = useState(true);
+  const [showPasswordDialog, setShowPasswordDialog] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [verifyingPassword, setVerifyingPassword] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -44,14 +49,14 @@ export default function Scanner() {
   useEffect(() => {
     if (!schoolId?.trim()) return;
     const focusInput = () => {
-      if (!showSuccessOverlay && !scanning && inputRef.current && document.activeElement !== inputRef.current) {
+      if (!showSuccessOverlay && !showPasswordDialog && !scanning && inputRef.current && document.activeElement !== inputRef.current) {
         inputRef.current.focus();
       }
     };
     focusInput();
     const interval = setInterval(focusInput, 10000);
     return () => clearInterval(interval);
-  }, [schoolId, showSuccessOverlay, scanning]);
+  }, [schoolId, showSuccessOverlay, showPasswordDialog, scanning]);
 
   const loadSchedules = useCallback(async () => {
     if (!schoolId?.trim()) {
@@ -67,8 +72,10 @@ export default function Scanner() {
   }, [loadSchedules]);
 
   useEffect(() => {
-    if (!schedules.length) {
-      setCurrentSessionName(null);
+    if (!isAutomaticMode || !schedules.length) {
+      if (!isAutomaticMode) {
+        setCurrentSessionName(null);
+      }
       return;
     }
     const updateSession = () => {
@@ -84,7 +91,47 @@ export default function Scanner() {
     updateSession();
     const interval = setInterval(updateSession, 1000);
     return () => clearInterval(interval);
-  }, [schedules]);
+  }, [schedules, isAutomaticMode]);
+
+  const verifyPassword = useCallback(async (password: string): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/auth/verify-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ password }),
+      });
+      const data = await res.json();
+      return data.verified === true;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  const handleToggleMode = useCallback(async () => {
+    setShowPasswordDialog(true);
+    setPasswordInput('');
+    setPasswordError('');
+  }, []);
+
+  const handlePasswordSubmit = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!passwordInput.trim()) {
+      setPasswordError('Password is required');
+      return;
+    }
+    setVerifyingPassword(true);
+    setPasswordError('');
+    const verified = await verifyPassword(passwordInput.trim());
+    setVerifyingPassword(false);
+    if (verified) {
+      setIsAutomaticMode((prev) => !prev);
+      setShowPasswordDialog(false);
+      setPasswordInput('');
+    } else {
+      setPasswordError('Incorrect password');
+    }
+  }, [passwordInput, verifyPassword]);
 
   const loadQueueCount = useCallback(async () => {
     const n = await db.getQueueCount();
@@ -292,6 +339,61 @@ export default function Scanner() {
         </div>
       )}
 
+      {showPasswordDialog && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="bg-white p-6 sm:p-8 rounded-2xl max-w-sm w-full shadow-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              <Lock className="w-6 h-6 text-gray-600" />
+              <h2 className="text-xl font-bold text-gray-900">Enter Password</h2>
+            </div>
+            <p className="text-sm text-gray-600 mb-4">
+              Please enter your password to switch to {isAutomaticMode ? 'manual' : 'automatic'} mode.
+            </p>
+            <form onSubmit={handlePasswordSubmit}>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
+                <input
+                  type="password"
+                  autoFocus
+                  value={passwordInput}
+                  onChange={(e) => {
+                    setPasswordInput(e.target.value);
+                    setPasswordError('');
+                  }}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
+                  placeholder="Enter your password"
+                  disabled={verifyingPassword}
+                />
+                {passwordError && (
+                  <p className="mt-2 text-sm text-red-600">{passwordError}</p>
+                )}
+              </div>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPasswordDialog(false);
+                    setPasswordInput('');
+                    setPasswordError('');
+                  }}
+                  className="flex-1 px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-lg transition-colors"
+                  disabled={verifyingPassword}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 px-4 py-2.5 bg-cyan-500 hover:bg-cyan-600 text-white font-medium rounded-lg transition-colors disabled:opacity-50"
+                  disabled={verifyingPassword || !passwordInput.trim()}
+                >
+                  {verifyingPassword ? 'Verifying...' : 'Verify'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {showSuccessOverlay && lastScannedStudent && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
           <div className="bg-white p-6 sm:p-8 rounded-2xl text-center max-w-sm w-full shadow-2xl overflow-hidden">
@@ -352,11 +454,6 @@ export default function Scanner() {
         </p>
         <p className="text-slate-400 text-sm mt-2">{manilaClock.date || '—'}</p>
         <p className="text-slate-500 text-xs mt-1">Time In / Time Out are recorded using this time</p>
-        {currentSessionName && (
-          <p className="text-emerald-400 text-sm font-medium mt-2">
-            Session: {currentSessionName} — {scanMode === 'time_in' ? 'Time In' : 'Time Out'}
-          </p>
-        )}
       </div>
 
       <div className="bg-white rounded-xl shadow p-6 mb-6">
@@ -369,27 +466,56 @@ export default function Scanner() {
             {scanMode === 'time_in' ? 'Time In' : 'Time Out'}
           </h2>
         </div>
-        <div className="flex justify-center mb-4">
-          <div className="inline-flex rounded-lg border border-gray-200 p-1 bg-gray-100">
+        <div className="flex flex-col items-center gap-3 mb-4">
+          <div className="flex items-center gap-3">
+            <span className={`text-sm font-medium ${isAutomaticMode ? 'text-gray-500' : 'text-gray-900'}`}>
+              Manual
+            </span>
             <button
               type="button"
-              onClick={() => setScanMode('time_in')}
-              className={`px-4 py-2 rounded-md text-sm font-medium ${
-                scanMode === 'time_in' ? 'bg-green-500 text-white' : 'text-gray-600'
+              onClick={handleToggleMode}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 ${
+                isAutomaticMode ? 'bg-cyan-500' : 'bg-gray-300'
               }`}
+              aria-label="Toggle automatic/manual mode"
             >
-              Time In
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  isAutomaticMode ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
             </button>
-            <button
-              type="button"
-              onClick={() => setScanMode('time_out')}
-              className={`px-4 py-2 rounded-md text-sm font-medium ${
-                scanMode === 'time_out' ? 'bg-red-500 text-white' : 'text-gray-600'
-              }`}
-            >
-              Time Out
-            </button>
+            <span className={`text-sm font-medium ${isAutomaticMode ? 'text-gray-900' : 'text-gray-500'}`}>
+              Automatic
+            </span>
           </div>
+          {isAutomaticMode && currentSessionName && (
+            <p className="text-xs text-gray-500">
+              Session: {currentSessionName} — {scanMode === 'time_in' ? 'Time In' : 'Time Out'}
+            </p>
+          )}
+          {!isAutomaticMode && (
+            <div className="inline-flex rounded-lg border border-gray-200 p-1 bg-gray-100">
+              <button
+                type="button"
+                onClick={() => setScanMode('time_in')}
+                className={`px-4 py-2 rounded-md text-sm font-medium ${
+                  scanMode === 'time_in' ? 'bg-green-500 text-white' : 'text-gray-600'
+                }`}
+              >
+                Time In
+              </button>
+              <button
+                type="button"
+                onClick={() => setScanMode('time_out')}
+                className={`px-4 py-2 rounded-md text-sm font-medium ${
+                  scanMode === 'time_out' ? 'bg-red-500 text-white' : 'text-gray-600'
+                }`}
+              >
+                Time Out
+              </button>
+            </div>
+          )}
         </div>
         <form onSubmit={handleScan} className="max-w-sm mx-auto">
           <input
