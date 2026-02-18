@@ -7,7 +7,8 @@ import { sendAttendanceSms } from '../lib/sms';
 import { onOnline, refreshStudentCache } from '../lib/sync';
 import { useAuth } from '../contexts/AuthContext';
 import { formatTimeManila, getNowManilaClock, nowISO } from '../lib/manilaTime';
-import type { StudentProfile } from '../types/database';
+import { getCurrentSession } from '../lib/scanSchedule';
+import type { StudentProfile, ScanSchedule } from '../types/database';
 import type { QueuedScan } from '../types/database';
 import type { TodayAttendanceRow } from '../lib/supabase';
 
@@ -24,9 +25,13 @@ export default function Scanner() {
   const [messageType, setMessageType] = useState<'success' | 'error' | 'info' | ''>('');
   const [lastScannedStudent, setLastScannedStudent] = useState<StudentProfile | null>(null);
   const [showSuccessOverlay, setShowSuccessOverlay] = useState(false);
+  const [overlayTitle, setOverlayTitle] = useState('Attendance Recorded!');
+  const [overlaySubtitle, setOverlaySubtitle] = useState<string | null>(null);
   const [scanMode, setScanMode] = useState<ScanModeType>('time_in');
+  const [schedules, setSchedules] = useState<ScanSchedule[]>([]);
   const [recentScans, setRecentScans] = useState<(TodayAttendanceRow | QueuedScan)[]>([]);
   const [manilaClock, setManilaClock] = useState<{ time: string; date: string }>({ time: '', date: '' });
+  const [currentSessionName, setCurrentSessionName] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -35,6 +40,51 @@ export default function Scanner() {
     const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (!schoolId?.trim()) return;
+    const focusInput = () => {
+      if (!showSuccessOverlay && !scanning && inputRef.current && document.activeElement !== inputRef.current) {
+        inputRef.current.focus();
+      }
+    };
+    focusInput();
+    const interval = setInterval(focusInput, 10000);
+    return () => clearInterval(interval);
+  }, [schoolId, showSuccessOverlay, scanning]);
+
+  const loadSchedules = useCallback(async () => {
+    if (!schoolId?.trim()) {
+      setSchedules([]);
+      return;
+    }
+    const { data } = await supabase.getScanSchedules(schoolId.trim());
+    setSchedules(data ?? []);
+  }, [schoolId]);
+
+  useEffect(() => {
+    loadSchedules();
+  }, [loadSchedules]);
+
+  useEffect(() => {
+    if (!schedules.length) {
+      setCurrentSessionName(null);
+      return;
+    }
+    const updateSession = () => {
+      const now = new Date();
+      const session = getCurrentSession(now, schedules);
+      if (session) {
+        setScanMode(session.action);
+        setCurrentSessionName(session.schedule.name);
+      } else {
+        setCurrentSessionName(null);
+      }
+    };
+    updateSession();
+    const interval = setInterval(updateSession, 1000);
+    return () => clearInterval(interval);
+  }, [schedules]);
 
   const loadQueueCount = useCallback(async () => {
     const n = await db.getQueueCount();
@@ -134,6 +184,30 @@ export default function Scanner() {
 
       const scanTime = nowISO();
       if (isOnline) {
+        const lrn = profile.learner_reference_number?.trim();
+        const { data: existing } =
+          lrn ? await supabase.getTodayAttendanceForLearner(lrn) : { data: null };
+
+        const alreadyTimeIn = scanMode === 'time_in' && existing?.time_in;
+        const alreadyTimeOut = scanMode === 'time_out' && existing?.time_out;
+
+        if (alreadyTimeIn || alreadyTimeOut) {
+          const recordTime = alreadyTimeIn ? existing!.time_in! : existing!.time_out!;
+          const timeLabel = alreadyTimeIn ? 'Time in' : 'Time out';
+          const timeStr = formatTimeManila(recordTime);
+          setOverlayTitle('Already scanned');
+          setOverlaySubtitle(`${timeLabel}: ${timeStr}`);
+          setMessage(`Already scanned. ${timeLabel}: ${timeStr}`);
+          setMessageType('info');
+          setLastScannedStudent(profile);
+          setShowSuccessOverlay(true);
+          setTimeout(() => setShowSuccessOverlay(false), 3000);
+          setScanning(false);
+          setRfId('');
+          setTimeout(() => inputRef.current?.focus(), 100);
+          return;
+        }
+
         if (scanMode === 'time_in') {
           const { error } = await supabase.recordTimeIn({
             learner_ref_number: profile.learner_reference_number ?? null,
@@ -170,6 +244,8 @@ export default function Scanner() {
         await loadRecentScans();
       }
 
+      setOverlayTitle('Attendance Recorded!');
+      setOverlaySubtitle(null);
       setMessage(
         isOnline
           ? `✅ ${profile.first_name} ${profile.last_name} ${scanMode === 'time_in' ? 'timed in' : 'timed out'} successfully!`
@@ -206,7 +282,7 @@ export default function Scanner() {
   };
 
   return (
-    <div className="min-h-screen p-4 max-w-2xl mx-auto">
+    <div className="p-1">
       {!isOnline && (
         <div className="mb-4 p-4 rounded-lg bg-amber-100 text-amber-900 border border-amber-300 flex items-center justify-between">
           <span className="font-medium">Offline – scans will sync when online</span>
@@ -217,21 +293,26 @@ export default function Scanner() {
       )}
 
       {showSuccessOverlay && lastScannedStudent && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
-          <div className="bg-white p-8 rounded-2xl text-center max-w-sm w-11/12 shadow-2xl">
-            {supabase.getStudentImageUrl(lastScannedStudent) ? (
-              <img
-                src={supabase.getStudentImageUrl(lastScannedStudent)!}
-                alt={`${lastScannedStudent.first_name} ${lastScannedStudent.last_name}`}
-                className="w-96 h-96 rounded-full object-cover mx-auto mb-4 border-2 border-green-500"
-              />
-            ) : (
-              <div className="w-96 h-96 rounded-full bg-gray-200 flex items-center justify-center mx-auto mb-4">
-                <UserCheck size={120} className="text-gray-400" />
-              </div>
-            )}
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="bg-white p-6 sm:p-8 rounded-2xl text-center max-w-sm w-full shadow-2xl overflow-hidden">
+            <div className="mx-auto mb-4 w-48 h-48 sm:w-64 sm:h-64 max-w-full aspect-square overflow-hidden">
+              {supabase.getStudentImageUrl(lastScannedStudent) ? (
+                <img
+                  src={supabase.getStudentImageUrl(lastScannedStudent)!}
+                  alt={`${lastScannedStudent.first_name} ${lastScannedStudent.last_name}`}
+                  className="w-full h-full rounded-full object-cover border-2 border-green-500"
+                />
+              ) : (
+                <div className="w-full h-full rounded-full bg-gray-200 flex items-center justify-center overflow-hidden">
+                  <UserCheck size={80} className="text-gray-400 flex-shrink-0 sm:w-24 sm:h-24" />
+                </div>
+              )}
+            </div>
             <CheckCircle size={48} className="text-green-500 mx-auto mb-2" />
-            <h2 className="text-2xl font-bold mb-2 text-gray-900">Attendance Recorded!</h2>
+            <h2 className="text-2xl font-bold mb-2 text-gray-900">{overlayTitle}</h2>
+            {overlaySubtitle && (
+              <p className="text-cyan-600 font-medium mb-1">{overlaySubtitle}</p>
+            )}
             <p className="text-lg text-gray-700">
               {lastScannedStudent.first_name} {lastScannedStudent.last_name}
             </p>
@@ -271,6 +352,11 @@ export default function Scanner() {
         </p>
         <p className="text-slate-400 text-sm mt-2">{manilaClock.date || '—'}</p>
         <p className="text-slate-500 text-xs mt-1">Time In / Time Out are recorded using this time</p>
+        {currentSessionName && (
+          <p className="text-emerald-400 text-sm font-medium mt-2">
+            Session: {currentSessionName} — {scanMode === 'time_in' ? 'Time In' : 'Time Out'}
+          </p>
+        )}
       </div>
 
       <div className="bg-white rounded-xl shadow p-6 mb-6">

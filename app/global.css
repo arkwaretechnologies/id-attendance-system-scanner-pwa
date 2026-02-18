@@ -2,8 +2,27 @@
 
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
-  background-color: #f9fafb;
   color: #090d11;
+}
+
+/* Page template: gradient background (turquoise/blue → purple/magenta) */
+.page-template-bg {
+  background: linear-gradient(135deg, #0ea5e9 0%, #06b6d4 25%, #8b5cf6 60%, #d946ef 100%);
+}
+
+/* Geometric folded-paper style shapes */
+.page-shape {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.15) 0%, rgba(255, 255, 255, 0.05) 100%);
+  clip-path: polygon(0 0, 100% 0, 100% 60%, 60% 100%, 0 100%);
+}
+.page-shape--br {
+  clip-path: polygon(40% 0, 100% 0, 100% 100%, 0 100%, 0 40%);
+}
+.page-shape--r {
+  clip-path: polygon(20% 0, 100% 20%, 100% 100%, 0 80%);
+}
+.page-shape--tl {
+  clip-path: polygon(0 0, 80% 0, 100% 100%, 0 60%);
 }

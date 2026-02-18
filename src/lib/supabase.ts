@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import type { StudentProfile } from '../types/database';
+import type { StudentProfile, ScanSchedule } from '../types/database';
 import { getTodayManilaRange } from './manilaTime';
 
 let client: SupabaseClient | null = null;
@@ -11,6 +11,28 @@ function getSupabase(): SupabaseClient {
     client = createClient(url, anonKey);
   }
   return client;
+}
+
+export async function getScanSchedules(
+  schoolId: string
+): Promise<{ data: ScanSchedule[]; error: unknown }> {
+  const sid = schoolId?.trim();
+  if (!sid) return { data: [], error: new Error('schoolId is required') };
+  try {
+    const res = await fetch(`/api/scan-schedule?school_id=${encodeURIComponent(sid)}`, {
+      method: 'GET',
+    });
+    const json = (await res.json()) as {
+      schedules?: ScanSchedule[];
+      error?: string | null;
+    };
+    if (!res.ok) {
+      return { data: [], error: json.error ?? 'Request failed' };
+    }
+    return { data: json.schedules ?? [], error: null };
+  } catch (e) {
+    return { data: [], error: e };
+  }
 }
 
 export async function getStudentByRfId(
@@ -26,6 +48,36 @@ export async function getStudentByRfId(
     .eq('school_id', sid)
     .single();
   return { data: data as StudentProfile | null, error };
+}
+
+export interface TodayAttendanceForLearner {
+  id: string;
+  time_in?: string | null;
+  time_out?: string | null;
+}
+
+/** Today's attendance row for a learner (to check if already scanned). */
+export async function getTodayAttendanceForLearner(
+  learnerReferenceNumber: string
+): Promise<{ data: TodayAttendanceForLearner | null; error: unknown }> {
+  const lrn = learnerReferenceNumber?.trim();
+  if (!lrn) return { data: null, error: new Error('learner_reference_number is required') };
+  try {
+    const res = await fetch(
+      `/api/attendance?learner_reference_number=${encodeURIComponent(lrn)}`,
+      { method: 'GET' }
+    );
+    const json = (await res.json()) as {
+      data?: TodayAttendanceForLearner | null;
+      error?: string | null;
+    };
+    if (!res.ok) {
+      return { data: null, error: json.error ?? 'Request failed' };
+    }
+    return { data: json.data ?? null, error: null };
+  } catch (e) {
+    return { data: null, error: e };
+  }
 }
 
 export async function recordTimeIn(args: {

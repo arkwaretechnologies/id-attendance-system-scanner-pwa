@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { LogIn, User, Lock, Building2, ArrowRight, ArrowLeft } from 'lucide-react';
+import { User, Lock, Building2, ArrowRight, ArrowLeft } from 'lucide-react';
 
 type Step = 'school' | 'credentials';
 
@@ -14,6 +14,7 @@ export default function LoginPage() {
   useEffect(() => {
     if (!loading && user) router.replace('/');
   }, [loading, user, router]);
+
   const [step, setStep] = useState<Step>('school');
   const [schoolIdInput, setSchoolIdInput] = useState('');
   const [schoolName, setSchoolName] = useState<string | null>(null);
@@ -85,46 +86,39 @@ export default function LoginPage() {
   };
 
   if (loading || user) return null;
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-600 to-purple-700 p-4">
+    <div className="min-h-screen flex items-center justify-center p-4">
       <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8">
-        <div className="text-center mb-8">
-          <LogIn className="w-12 h-12 text-indigo-600 mx-auto mb-4" />
-          <h1 className="text-2xl font-bold text-gray-900">Welcome Back</h1>
-          <p className="text-gray-500 mt-1">
-            {step === 'school'
-              ? 'Enter your school ID to continue'
-              : 'Sign in to ID Attendance Scanner'}
-          </p>
-        </div>
+        <h1 className="text-2xl font-bold text-gray-900 mb-6">Login</h1>
 
         {error && (
-          <div className="mb-4 p-3 rounded-lg bg-red-50 text-red-700 text-sm">
+          <div className="mb-4 p-3 rounded-lg bg-red-50 text-red-700 text-sm border border-red-100">
             {error}
           </div>
         )}
 
         {step === 'school' ? (
           <form onSubmit={handleSchoolContinue}>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              <Building2 className="w-4 h-4 inline mr-2 align-middle" />
-              School ID
-            </label>
-            <input
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-              value={schoolIdInput}
-              onChange={(e) => setSchoolIdInput(e.target.value.replace(/\D/g, ''))}
-              placeholder="Enter your school ID"
-              required
-              disabled={validatingSchool}
-              autoFocus
-            />
+            <label className="block text-sm font-medium text-gray-700 mb-1">School ID</label>
+            <div className="flex items-center border-b border-gray-300 focus-within:border-cyan-500 transition-colors mb-6">
+              <Building2 className="w-5 h-5 text-gray-400 mr-2 flex-shrink-0" />
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                className="flex-1 py-2.5 bg-transparent border-0 focus:ring-0 focus:outline-none placeholder:text-gray-400"
+                value={schoolIdInput}
+                onChange={(e) => setSchoolIdInput(e.target.value.replace(/\D/g, ''))}
+                placeholder="Type your school ID"
+                required
+                disabled={validatingSchool}
+                autoFocus
+              />
+            </div>
             <button
               type="submit"
-              className="w-full mt-4 py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg flex items-center justify-center gap-2 disabled:opacity-50"
+              className="w-full py-3 px-4 rounded-lg font-semibold text-white uppercase tracking-wide bg-gradient-to-r from-cyan-400 via-cyan-500 to-fuchsia-500 hover:from-cyan-500 hover:to-fuchsia-600 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
               disabled={validatingSchool}
             >
               {validatingSchool ? 'Checking...' : (
@@ -143,48 +137,60 @@ export default function LoginPage() {
               </p>
             )}
             <form onSubmit={handleSubmit}>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                <User className="w-4 h-4 inline mr-2 align-middle" />
-                Username
-              </label>
-              <input
-                type="text"
-                autoComplete="username"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 mb-4"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="Enter your username"
-                required
-                disabled={signingIn}
-              />
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                <Lock className="w-4 h-4 inline mr-2 align-middle" />
-                Password
-              </label>
-              <input
-                type="password"
-                autoComplete="current-password"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 mb-4"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter your password"
-                required
-                disabled={signingIn}
-              />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+              <div className="flex items-center border-b border-gray-300 focus-within:border-cyan-500 transition-colors mb-6">
+                <User className="w-5 h-5 text-gray-400 mr-2 flex-shrink-0" />
+                <input
+                  type="text"
+                  autoComplete="username"
+                  className="flex-1 py-2.5 bg-transparent border-0 focus:ring-0 focus:outline-none placeholder:text-gray-400"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="Type your username"
+                  required
+                  disabled={signingIn}
+                />
+              </div>
+
+              <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+              <div className="flex items-center border-b border-gray-300 focus-within:border-cyan-500 transition-colors mb-2">
+                <Lock className="w-5 h-5 text-gray-400 mr-2 flex-shrink-0" />
+                <input
+                  type="password"
+                  autoComplete="current-password"
+                  className="flex-1 py-2.5 bg-transparent border-0 focus:ring-0 focus:outline-none placeholder:text-gray-400"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Type your password"
+                  required
+                  disabled={signingIn}
+                />
+              </div>
+              <div className="text-right mb-6">
+                <button
+                  type="button"
+                  className="text-sm text-gray-500 hover:text-cyan-600 focus:outline-none"
+                  onClick={() => {}}
+                >
+                  Forgot password?
+                </button>
+              </div>
+
               <button
                 type="submit"
-                className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg disabled:opacity-50 mb-3"
+                className="w-full py-3 px-4 rounded-lg font-semibold text-white uppercase tracking-wide bg-gradient-to-r from-cyan-400 via-cyan-500 to-fuchsia-500 hover:from-cyan-500 hover:to-fuchsia-600 transition-all disabled:opacity-50 mb-6"
                 disabled={signingIn}
               >
-                {signingIn ? 'Signing in...' : 'Sign In'}
+                {signingIn ? 'Signing in...' : 'Login'}
               </button>
+
               <button
                 type="button"
-                className="w-full py-3 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-lg flex items-center justify-center gap-2 disabled:opacity-50"
+                className="w-full py-3 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-lg flex items-center justify-center gap-2 disabled:opacity-50 transition-colors"
                 onClick={handleBackToSchool}
                 disabled={signingIn}
               >
-                <ArrowLeft className="w-4 h-4" />
+                <ArrowLeft className="w-5 h-5" />
                 Back to school ID
               </button>
             </form>

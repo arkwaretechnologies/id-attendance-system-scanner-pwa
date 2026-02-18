@@ -1,6 +1,42 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServer } from '@/lib/supabaseServer';
 import { getTodayManilaRange, parseTimestampToDate } from '@/lib/manilaTime';
+
+/** GET: today's attendance record for a learner (to check if already scanned). */
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const learnerRef = searchParams.get('learner_reference_number')?.trim();
+    if (!learnerRef) {
+      return NextResponse.json(
+        { data: null, error: 'learner_reference_number is required' },
+        { status: 400 }
+      );
+    }
+    const supabase = getSupabaseServer();
+    const { start, end } = getTodayManilaRange();
+    const { data, error } = await supabase
+      .from('attendance')
+      .select('id, time_in, time_out')
+      .eq('learner_reference_number', learnerRef)
+      .gte('created_at', start)
+      .lt('created_at', end)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      return NextResponse.json({ data: null, error: error.message }, { status: 422 });
+    }
+    return NextResponse.json({ data, error: null });
+  } catch (e) {
+    console.error('Attendance GET error:', e);
+    return NextResponse.json(
+      { data: null, error: e instanceof Error ? e.message : 'Server error' },
+      { status: 500 }
+    );
+  }
+}
 
 export async function POST(request: Request) {
   try {

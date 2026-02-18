@@ -20,3 +20,13 @@ export interface QueuedScan {
   timestamp_iso: string;
   synced: boolean;
 }
+
+/** Row from scan_schedule (time_in/time_out are time-of-day, e.g. "07:00:00"). */
+export interface ScanSchedule {
+  id: string;
+  name: string;
+  time_in: string;
+  time_out: string;
+  school_id?: number | null;
+  created_at?: string | null;
+}
